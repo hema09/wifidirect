@@ -1,44 +1,33 @@
 package com.example.android.wifidirect;
 
-import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
-import java.security.InvalidParameterException;
-
-import java.net.InetAddress;
-import java.net.DatagramSocket;
 import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Collections;
 
-import android.app.Activity;
 import android.app.IntentService;
 import android.content.Context;
 import android.content.Intent;
 import android.media.AudioFormat;
 import android.media.AudioManager;
-import android.media.AudioTrack;
-import android.os.Binder;
-import android.os.Bundle;
-import android.os.IBinder;
-import android.view.View;
-import android.view.View.OnClickListener;
-import android.widget.Button;
-import android.util.Log;
-
 import android.media.AudioRecord;
+import android.media.AudioTrack;
 import android.media.MediaRecorder;
+import android.os.Binder;
+import android.os.IBinder;
+import android.util.Log;
 
 /** UdpStream class sends and recv audio data through udp */
 
@@ -60,7 +49,7 @@ public class UdpStream extends IntentService {
 	/*static final String AUDIO_NUMPKTS_PATH = "/sdcard/1.txt";*/
 	static int AUDIO_PORT = 2048;
 	static String HOST = "";
-	
+
 	static int STOP_PORT = 9500; 
 
 	static final int SAMPLE_RATE = 44100; // original was 8000
@@ -85,7 +74,7 @@ public class UdpStream extends IntentService {
 	private static boolean IS_STREAMING = true;
 
 	private boolean first, OWNER, first_group = true;
-	
+
 	public static Socket sock = null;
 	public static ServerSocket stopSocket;
 	public static Socket socketClient;
@@ -116,7 +105,7 @@ public class UdpStream extends IntentService {
 			AUDIO_FILE_PATH = "/sdcard/"+intent.getExtras().getString(EXTRAS_FILENAME);
 			Log.d(TAG, " File to stream : " + AUDIO_FILE_PATH);
 			SendAudio();
-			
+
 
 		} else if(type_stream == 1) {
 			//recv file
@@ -131,7 +120,7 @@ public class UdpStream extends IntentService {
 			AUDIO_PORT = intent.getExtras().getInt(EXTRAS_GROUP_OWNER_PORT);
 
 			/*SendMicAudio(true);*/
-			
+
 			if(first_group == false) {
 				IS_RECORDING = true;
 				Thread th1 = new Thread(new Runnable(){			
@@ -155,8 +144,8 @@ public class UdpStream extends IntentService {
 					}	
 				});	
 				th1.start();
-				
-				
+
+
 			}  else {
 				SendMicAudio(true);
 				first_group = false;
@@ -167,7 +156,8 @@ public class UdpStream extends IntentService {
 	public void RecvAudio()
 	{
 		Thread thrd = new Thread(new Runnable() {
-			int numpackets = 0;
+			int numpackets = 0, seq_num;
+			ArrayList<Integer> seq_num_list = new ArrayList<Integer>();
 			@Override
 			public void run() 
 			{
@@ -182,16 +172,30 @@ public class UdpStream extends IntentService {
 				{
 					DatagramSocket sock = new DatagramSocket(AUDIO_PORT);
 					byte[] buf = new byte[BUF_SIZE + 4];
+					byte[] seq = new byte[4];
 
 					while(true)
 					{
 						if(  IS_STREAMING == false) {
+							//streaming has ended
 							Log.d(LOG_TAG, "Packets receieved total : " + numpackets);
+							Log.d(LOG_TAG, seq_num_list + " is the sequence number list");
+							numpackets = 0;
+							printStats(seq_num_list);
+							seq_num_list.clear();
 							IS_STREAMING = true;
 						}
-						DatagramPacket pack = new DatagramPacket(buf, BUF_SIZE);
+						DatagramPacket pack = new DatagramPacket(buf, BUF_SIZE+4);
 						sock.receive(pack);
-						Log.d(LOG_TAG, " Packet received size = " + pack.getLength() + " actual packet length : " +  BUF_SIZE);
+
+						//getting the sequence number from buffer, this line does not work
+						//seq = Arrays.copyOfRange(buf, BUF_SIZE, BUF_SIZE+4);
+						System.arraycopy(pack.getData(), pack.getLength()-4, seq, 0, 4);
+						ByteBuffer buf1 = ByteBuffer.wrap(seq);
+						seq_num = buf1.getInt();
+						Log.d(LOG_TAG, "Sequence number is " + seq_num);
+						seq_num_list.add(new Integer(seq_num));
+
 						numpackets++;
 						if(first && OWNER) {
 							first = false;
@@ -208,52 +212,49 @@ public class UdpStream extends IntentService {
 								}
 							});
 							sendThread.start();
-							
-							 Thread stopMesgThread = new Thread(new Runnable() { 
-                                 @Override
-                                 public synchronized void run() {
-                                	 System.out.println("stop thread running");
-                                         //code for recving the stop
-                                         try {
-                                                 stopSocket = new ServerSocket(STOP_PORT);
-                                                 socketClient =  stopSocket.accept();
-                                                 DataInputStream ip = new DataInputStream(socketClient.getInputStream());
-                                                 System.out.println("accepting data");
-                                                 while(true){
-                                                	 int ii = ip.readInt();
-                                                	 System.out.println("READ  : " + ii );
-                                                	 
-                                                	 if(ii == 2) {
-                                                		 // called when stop_recording is sent from grp member
-                                                		 IS_RECORDING = false;
-                                                		 Log.d(LOG_TAG, "received ii=2");
-                                                		 // do post send audio stuff, display received packets
-                                                	 } else if (ii == 1){
-                                                		 // called with start_mic is called
-                                                		 IS_RECORDING = true;
-                                                		 Log.d(LOG_TAG, "received ii=1");
-                                                	 } else if(ii == 3) {
-                                                		 IS_STREAMING = false;
-                                                		 Log.d(LOG_TAG, "received ii: " + ii);
-                                                	 }
-                                                 }                                                
-                                                 
-                                         } catch (IOException e) {                                                 
-                                                 e.printStackTrace();
-                                         }
 
+							Thread stopMesgThread = new Thread(new Runnable() { 
+								@Override
+								public synchronized void run() {
+									System.out.println("stop thread running");
+									//code for recving the stop
+									try {
+										stopSocket = new ServerSocket(STOP_PORT);
+										socketClient =  stopSocket.accept();
+										DataInputStream ip = new DataInputStream(socketClient.getInputStream());
+										System.out.println("accepting data");
+										while(true){
+											int ii = ip.readInt();
+											System.out.println("READ  : " + ii );
 
-                                 }
-                         });
-						Log.d(LOG_TAG, "Stop thread will start");
-                         stopMesgThread.start();
-                         Log.d(LOG_TAG, "Stop thread started");                         
+											if(ii == 2) {
+												// called when stop_recording is sent from grp member
+												IS_RECORDING = false;
+												Log.d(LOG_TAG, "received ii=2");
+												// do post send audio stuff, display received packets
+											} else if (ii == 1){
+												// called with start_mic is called
+												IS_RECORDING = true;
+												Log.d(LOG_TAG, "received ii=1");
+											} else if(ii == 3) {
+												IS_STREAMING = false;
+												Log.d(LOG_TAG, "received ii: " + ii);
+											}
+										}                                                
 
+									} catch (IOException e) {                                                 
+										e.printStackTrace();
+									}
+								}
+							});
+							Log.d(LOG_TAG, "Stop thread will start");
+							stopMesgThread.start();
+							Log.d(LOG_TAG, "Stop thread started");                         
 						}
-						Log.d(LOG_TAG, "recv pack: " + pack.getLength());
+						//Log.d(LOG_TAG, "recv pack: " + pack.getLength());
 						track.write(pack.getData(), 0, pack.getLength()-4);
 					}
-					
+
 				}
 				catch (SocketException se)
 				{
@@ -264,6 +265,26 @@ public class UdpStream extends IntentService {
 					Log.e(LOG_TAG, "IOException" + ie.toString());
 				}
 			} // end run
+
+			/**
+			 * This method will print stats
+			 * @param AllPackets 
+			 */
+			private void printStats(ArrayList<Integer> AllPackets) {
+				Collections.sort(AllPackets);
+				//System.out.println("Sequence numbers received : " + AllPackets);
+				ArrayList<Integer> allbursts = new ArrayList<Integer>();
+				int totalburst = 0;
+				for(int i=1; i<AllPackets.size();i++) {
+					int burst = AllPackets.get(i)-AllPackets.get(i-1);
+					allbursts.add(burst); totalburst += burst;
+				}
+				Log.d(LOG_TAG, "Bursts between packets : " + allbursts);
+				Collections.sort(allbursts);
+				Log.d(LOG_TAG, " Min burst = " + allbursts.get(0) + " Max burst = " + allbursts.get(allbursts.size()-1)
+						+ " avg burst = " + totalburst/allbursts.size());
+
+			}
 		});
 		thrd.start();
 	}
@@ -282,21 +303,35 @@ public class UdpStream extends IntentService {
 				int bytes_count = 0;
 				File audio = new File(AUDIO_FILE_PATH);
 				FileInputStream audio_stream = null;
-				
+
 				file_size = audio.length();
 				byte[] buf = new byte[BUF_SIZE];
+
 				try
 				{
 					InetAddress addr = InetAddress.getByName(HOST);
 					DatagramSocket sock = new DatagramSocket();
 					audio_stream = new FileInputStream(audio);
-				
+
 					while(bytes_count < file_size)
 					{
+						//sequence number code
+						ByteBuffer bytebuf = ByteBuffer.allocate(4);
+						bytebuf.putInt(seq_num);
+						byte[] seq = bytebuf.array();
+						Log.d(LOG_TAG, "Sequence number is " + seq_num);
+
 						bytes_read = audio_stream.read(buf, 0, BUF_SIZE);
-						DatagramPacket pack = new DatagramPacket(buf, bytes_read,
+
+						//creating a new buffer to send
+						byte[] c = new byte[buf.length + seq.length];
+						System.arraycopy(buf, 0, c, 0, buf.length);
+						System.arraycopy(seq, 0, c, buf.length, seq.length);
+
+						DatagramPacket pack = new DatagramPacket(c, c.length,
 								addr, AUDIO_PORT);
-						numpackets++;
+						Log.d(LOG_TAG, c.length + " is the len of buffer");
+						numpackets++; seq_num++;
 						sock.send(pack);
 						bytes_count += bytes_read;
 						//Log.d(LOG_TAG, "bytes_count : " + bytes_count);
@@ -304,7 +339,7 @@ public class UdpStream extends IntentService {
 					}
 					System.out.println("Packets sent : " + numpackets);
 					stopStreaming();
-					
+
 				}
 				catch (InterruptedException ie)
 				{
@@ -343,7 +378,7 @@ public class UdpStream extends IntentService {
 
 				@Override
 				public void run() {
-					
+
 					RecvAudio();
 
 				}
@@ -449,9 +484,9 @@ public class UdpStream extends IntentService {
 		});	
 		th.start();
 	}
-	
+
 	public void stopStreaming() {
-		
+
 		Thread th = new Thread(new Runnable(){			
 
 			@Override
@@ -462,6 +497,7 @@ public class UdpStream extends IntentService {
 
 					DataOutputStream out = new DataOutputStream(sock.getOutputStream());
 					out.writeInt(3); // 3 is for stop streaming
+					Log.d(LOG_TAG, "Streaming stop command sent");
 
 				} catch (UnknownHostException e) {
 					e.printStackTrace();
@@ -473,7 +509,7 @@ public class UdpStream extends IntentService {
 
 		});	
 		th.start();
-		
+
 	}
 
 	/*public void SendMicAudio()
