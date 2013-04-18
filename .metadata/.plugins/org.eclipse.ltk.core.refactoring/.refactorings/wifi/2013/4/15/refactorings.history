@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Move element &apos;popup.xml&apos; to &apos;menu&apos;&#x0D;&#x0A;- Original project: &apos;wifi&apos;&#x0D;&#x0A;- Destination element: &apos;menu&apos;&#x0D;&#x0A;- Original element: &apos;popup.xml&apos;&#x0D;&#x0A;- Update references to refactored element" description="Move file" element1="res/layout/popup.xml" files="1" flags="589830" folders="0" id="org.eclipse.jdt.ui.move" policy="org.eclipse.jdt.ui.moveResources" qualified="false" references="true" stamp="1365793949139" target="res/menu" units="0" version="1.0"/>
+</session>

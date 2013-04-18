@@ -1,0 +1,12 @@
+INDEX VERSION 1.126+C:\adt-bundle-windows-x86_64-20130219\workspace\.metadata\.plugins\org.eclipse.jdt.core
+289144947.index
+4237193963.index
+1829102222.index
+2940680813.index
+3095551288.index
+2774209488.index
+3759096874.index
+2390911142.index
+2919637740.index
+342743925.index
+2803982370.index
